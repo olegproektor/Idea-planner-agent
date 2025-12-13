@@ -277,7 +277,509 @@ text
    - Subscriber counts
 
 ---
+---
 
+## 🖥️ INTERFACE SPECIFICATION
+
+### Primary Interface: Telegram Bot
+
+**Decision Date:** 2025-12-13  
+**Rationale:** Telegram-first approach для MVP
+
+#### Why Telegram Bot?
+
+**Market Fit:**
+- ✅ Target audience (Russian solopreneurs) живут в Telegram
+- ✅ 90M+ users in Russia vs 20M web active users
+- ✅ Mobile-first: 80% времени на мобильном
+- ✅ 0 friction onboarding (no sign-up, no app install)
+- ✅ Viral growth: forward бота друзьям = organic marketing
+- ✅ Integrated payments: Telegram Stars, YooMoney, СБП
+
+**Technical Benefits:**
+- ✅ python-telegram-bot library зрелая и стабильная
+- ✅ Webhook mode для production-ready deployment
+- ✅ Built-in support для rich media (buttons, inline keyboards, PDF)
+- ✅ Free hosting webhook server (Railway, Render, Google Cloud Run)
+
+**Alternatives Considered:**
+
+|
+ Interface 
+|
+ Pros 
+|
+ Cons 
+|
+ Decision 
+|
+|
+-----------
+|
+------
+|
+------
+|
+----------
+|
+|
+ CLI 
+|
+ Fast development (2-3 days) 
+|
+ Only developers can use 
+|
+ ❌ Too narrow audience 
+|
+|
+ Web App 
+|
+ Professional look, SEO 
+|
+ Long development (10-14 days), needs frontend 
+|
+ ❌ Out of scope for MVP 
+|
+|
+**
+Telegram Bot
+**
+|
+**
+Best audience fit, viral growth
+**
+|
+**
+Requires webhook server
+**
+|
+ ✅ 
+**
+SELECTED
+**
+|
+
+#### User Interaction Flow
+
+**Step 1: Discovery**
+User открывает Telegram → поиск @ideaplanneragent_bot
+Или переход по ссылке: t.me/ideaplanneragent_bot
+
+text
+
+**Step 2: Onboarding**
+Бот: "👋 Привет! Я помогу валидировать твою бизнес-идею.
+
+Просто опиши идею в 1-2 предложениях.
+
+Пример:
+'Производство эко-посуды из дерева для WB'
+
+Я проанализирую:
+✅ Конкурентов на WB/Ozon
+✅ Спрос (Yandex.Wordstat)
+✅ Цены и тренды
+✅ 30-day action plan
+
+Напиши свою идею ⬇️"
+
+text
+
+**Step 3: Analysis**
+User: "Экологичная мебель из переработанного дерева"
+
+Бот: "⏳ Анализирую...
+🔍 Ищу конкурентов на Wildberries
+📊 Проверяю спрос в Yandex.Wordstat
+💰 Собираю данные о ценах
+
+Это займёт 30-90 секунд..."
+
+text
+
+**Step 4: Results**
+Бот отправляет 7-секционный анализ:
+
+━━━━━━━━━━━━━━━━━━━━━
+📋 КАРТОЧКА ИДЕИ
+━━━━━━━━━━━━━━━━━━━━━
+
+Проблема: Пластик вреден...
+Решение: Деревянная посуда...
+ЦА: Эко-сознательные 25-45...
+Рынок: 15 млрд ₽/год...
+
+[See full 7 sections formatted for mobile]
+[См. полные 7 разделов, отформатированных для мобильных устройств]
+
+━━━━━━━━━━━━━━━━━━━━━
+
+[📄 Скачать PDF] [📊 Подробнее] [💬 Задать вопрос] [🔄 Новый анализ]
+
+text
+
+**Step 5: Actions**
+User нажимает кнопку:
+
+📄 PDF → бот отправляет PDF файл (shareable)
+📊 Подробнее → переключение в РЕЖИМ: ОТЧЁТ 2 (extended)
+💬 Вопрос → интерактивный Q&A режим
+🔄 Новый анализ → restart flow
+
+text
+
+#### Technical Architecture (Telegram)
+
+User (Telegram Client)
+↓
+Telegram Bot API (webhook)
+↓
+Python Webhook Server (Flask/FastAPI)
+↓
+agent.py (Core Agent Logic)
+↓
+tools/ru_search.py (WB/Ozon/Yandex)
+↓
+LLM (Groq/Llama-3.3-70b)
+↓
+Response → formatted для Telegram
+↓
+User receives 7-section analysis
+
+text
+
+**Deployment:**
+- Webhook server: Railway.app или Google Cloud Run (free tier)
+- Local dev: ngrok для testing
+- Prod: HTTPS endpoint для Telegram webhook
+
+#### Mobile-First Formatting Rules
+
+**For Telegram:**
+- ✅ Short paragraphs (2-3 sentences max)
+- ✅ Emoji для visual structure (📊, 💰, ✅, ❌)
+- ✅ Bullet points, не длинные абзацы
+- ✅ Bold для headers (**Header**)
+- ✅ Inline keyboards для actions (buttons)
+- ✅ PDF export для full report
+
+**Avoid:**
+- ❌ Long text walls (не читается на мобильном)
+- ❌ Tables (плохо отображаются в Telegram)
+- ❌ Markdown links в тексте (используй buttons)
+
+#### MVP Scope для Telegram Bot
+
+**Phase 1 (MVP):**
+- ✅ Basic idea input → 7-section analysis
+- ✅ PDF export button
+- ✅ Mode detection (9 modes)
+- ✅ Error handling (API failures)
+- ✅ Rate limiting (3 analyses/hour per user)
+
+**Phase 2 (Post-MVP):**
+- Payment integration (Telegram Stars для premium)
+- User history (save past analyses)
+- Interactive Q&A (follow-up questions)
+- B2B dashboard (web interface для business users)
+
+---
+
+## ⚠️ ERROR HANDLING STRATEGY
+
+### API Failure Scenarios
+
+**Critical:** Russian market APIs unstable — must handle gracefully
+
+#### 1. Wildberries API Errors
+
+| Error | Scenario | Response Strategy |
+|-------|----------|-------------------|
+| **429 (Rate Limit)** | Too many requests | Exponential backoff: 1s → 2s → 4s → 8s (max 3 retries) |
+| **503 (Service Unavailable)** | WB server down | Fallback to cached data (1-2 weeks old) + disclaimer |
+| **404 (Not Found)** | Product/category missing | Return "No data found" + suggest keyword variations |
+| **Timeout (>30s)** | Slow response | Cancel request, use cached data, notify user |
+
+**Implementation:**
+def fetch_wb_data(query: str, max_retries: int = 3):
+for attempt in range(max_retries):
+try:
+response = requests.get(WB_API_URL, timeout=30)
+if response.status_code == 429:
+time.sleep(2 ** attempt) # Exponential backoff
+continue
+return response.json()
+except Timeout:
+if attempt == max_retries - 1:
+return get_cached_data(query) # Fallback
+def fetch_wb_data(запрос: str, max_retries: int = 3): для попытки в диапазоне(max_retries): try: response = requests.get(WB_API_URL, timeout=30)
+
+text
+
+#### 2. Yandex.Wordstat Errors
+
+| Error | Scenario | Response Strategy |
+|-------|----------|-------------------|
+| **IP Block** | Too many scraping requests | Rotate proxies (proxy pool) OR use official API ($500₽/month) |
+| **CAPTCHA** | Anti-bot detection | Switch to official API OR cache results (update weekly) |
+| **Empty Results** | Low-volume keyword | Return "Недостаточно данных" + suggest broader keywords |
+
+**Mitigation:**
+- Use official Yandex.XML API for production (costs 500₽/month)
+- Scraping only for MVP/testing
+- Cache popular keywords (refresh every 7 days)
+
+#### 3. Groq API / LLM Errors
+
+| Error | Scenario | Response Strategy |
+|-------|----------|-------------------|
+| **Hallucination** | LLM invents fake numbers | Validation layer: cross-check facts vs WB actual data |
+| **Rate Limit** | Too many LLM calls | Queue requests, retry after 60s |
+| **Empty Response** | LLM fails to generate | Fallback template response + log error |
+| **Timeout (>60s)** | Slow inference | Cancel, retry with shorter prompt |
+
+**Validation Layer:**
+def validate_llm_output(analysis: dict, wb_data: dict):
+# Check price range plausible
+if analysis['price'] not in range(wb_data['min_price'], wb_data['max_price']):
+raise ValidationError("Price hallucination detected")
+def validate_llm_output(анализ: Дикт, wb_data: Дикт): # Проверить правдоподобный ценовой диапазон
+
+text
+# Check competitor names exist
+for competitor in analysis['competitors']:
+    if competitor not in wb_data['sellers']:
+        raise ValidationError(f"Fake competitor: {competitor}")
+text
+
+#### 4. User Input Errors
+
+| Error | Scenario | Response Strategy |
+|-------|----------|-------------------|
+| **Empty Input** | User sends blank message | Prompt: "Опиши идею хотя бы в 1 предложении" |
+| **Too Vague** | "бизнес на маркетплейсе" | Ask clarifying questions: "Какой товар? Какая категория?" |
+| **Too Long** | 500+ words | Summarize to 2-3 sentences, ask user to confirm |
+| **Non-Russian** | English input | Auto-detect language, translate to Russian OR respond in English |
+
+#### 5. System Errors
+
+| Error | Scenario | Response Strategy |
+|-------|----------|-------------------|
+| **Out of Memory** | Large analysis | Split into chunks, process sequentially |
+| **Database Down** | Cannot save history | Continue without save, notify user |
+| **Network Error** | No internet | Queue request, retry when online |
+
+### Data Freshness Policy
+
+**Critical:** WB/Ozon data не real-time — communicate это user
+
+| Data Type | Update Frequency | Max Age | Disclaimer |
+|-----------|------------------|---------|------------|
+| **Prices** | Every 6 hours | 12 hours | "Цены актуальны на {timestamp}" |
+| **Ratings** | Daily | 2 days | "Рейтинги обновлены {date}" |
+| **Keyword Volume** | Weekly | 14 days | "Данные Yandex.Wordstat за {week}" |
+| **Competitor Count** | Daily | 2 days | "Количество конкурентов на {date}" |
+
+**User-Facing Message:**
+⚠️ Данные актуальны на 13.12.2025 10:00 MSK
+
+Wildberries: обновлено 6 часов назад
+Yandex.Wordstat: за неделю 02-09.12.2025
+
+text
+
+### Graceful Degradation
+
+**Principle:** Partial data > No data
+
+**Scenario 1: WB доступен, Ozon down**
+Response: "✅ Анализ на основе Wildberries
+⚠️ Ozon временно недоступен (используем данные за прошлую неделю)"
+
+text
+
+**Scenario 2: Все APIs down**
+Response: "❌ Извини, сейчас данные недоступны.
+Попробуй через 15 минут или используй кешированный анализ аналогичной идеи."
+
+text
+
+**Scenario 3: LLM timeout, но data есть**
+Response: "⚠️ Анализ занял слишком много времени.
+Вот сырые данные с WB:
+
+Конкуренты: 50K товаров
+
+Средняя цена: 1,200₽
+
+Топ продавец: EcoWood (4.7★)
+
+Полный отчёт придёт через 2 минуты."
+
+text
+
+---
+
+## 📋 USER STORIES (DETAILED)
+
+### US-1: Basic Idea Evaluation (Core Flow)
+
+**As a** Russian solopreneur with 2+ years experience  
+**I want to** input my business idea in 1-2 sentences via Telegram bot  
+**So that** I receive structured 7-section analysis in <2 minutes with real WB/Ozon data
+
+**Priority:** P0 (Blocker для MVP)
+
+**Acceptance Criteria:**
+1. ✅ Bot responds within 3 seconds to initial message
+2. ✅ Analysis completes in <2 minutes 90% of the time
+3. ✅ All 7 sections populated (not empty placeholders)
+4. ✅ Market Gap section contains 3+ specific opportunities
+5. ✅ Competitor data from real WB searches (not hallucinated)
+6. ✅ PDF export button functional (generates valid PDF)
+7. ✅ Mobile-friendly formatting (short paragraphs, emoji, bold headers)
+
+**Edge Cases:**
+- Input too vague ("бизнес на WB") → Bot asks clarifying questions
+- No WB results found → Bot suggests broader keywords OR related categories
+- API timeout → Bot shows partial results + "⏳ Full analysis coming..."
+
+**Definition of Done:**
+- [ ] Manual test: 10 разных идей → all complete in <2 min
+- [ ] Unit test: mock WB API → verify parsing
+- [ ] E2E test: Telegram bot → full flow → PDF generated
+
+---
+
+### US-2: Mode Detection & Customization
+
+**As a** power user familiar with the bot  
+**I want to** specify analysis mode (РЕЖИМ: БИЗНЕС-ПЛАН, РЕЖИМ: МАРКЕТИНГ, etc.)  
+**So that** I get deeper analysis on specific aspect instead of balanced overview
+
+**Priority:** P1 (Nice-to-have для MVP, required for v1.1)
+
+**Acceptance Criteria:**
+1. ✅ User types "РЕЖИМ: БИЗНЕС-ПЛАН {idea}" → mode detected via regex
+2. ✅ Bot adjusts output focus (more финмодель, less generic)
+3. ✅ All 9 modes work correctly (test each)
+4. ✅ Default mode = РЕЖИМ: ОЦЕНКА (if no mode specified)
+5. ✅ Invalid mode → Bot suggests valid options
+
+**Mode List:**
+- РЕЖИМ: ОЦЕНКА (default)
+- РЕЖИМ: БИЗНЕС-ПЛАН
+- РЕЖИМ: МАРКЕТИНГ
+- РЕЖИМ: ИСПОЛНЕНИЕ
+- РЕЖИМ: САЙТ
+- РЕЖИМ: ОТЧЁТ [1/2/3]
+- РЕЖИМ: ПОЧЕМУ_СЕЙЧАС
+- РЕЖИМ: РЫНОЧНЫЙ_РАЗРЫВ
+- РЕЖИМ: ДОКАЗАТЕЛЬСТВА
+
+**Regex Pattern:**
+mode_pattern = r"РЕЖИМ:\s*(ОЦЕНКА|БИЗНЕС-ПЛАН|МАРКЕТИНГ|ИСПОЛНЕНИЕ|САЙТ|ОТЧЁТ\s*​|ПОЧЕМУ_СЕЙЧАС|РЫНОЧНЫЙ_РАЗРЫВ|ДОКАЗАТЕЛЬСТВА)"
+
+text
+
+---
+
+### US-3: Data Validation & Source Citation
+
+**As a** critical founder who fact-checks  
+**I want to** see источники данных (WB links, Yandex search volume, exact numbers)  
+**So that** I can verify analysis accuracy and не доверять вслепую
+
+**Priority:** P1 (Trust = critical for adoption)
+
+**Acceptance Criteria:**
+1. ✅ Every price/rating/volume has source link (WB product page, Yandex.Wordstat screenshot)
+2. ✅ Timestamps показаны: "Данные актуальны на 13.12.2025 10:00 MSK"
+3. ✅ Competitor names = real WB sellers (clickable links)
+4. ✅ If data старые (>2 days) → disclaimer ⚠️
+5. ✅ If hallucination detected → validation error → bot says "Не могу проверить этот факт"
+
+**Example Output:**
+Конкуренты:
+
+EcoWood (WB) — 1,200₽, рейтинг 4.7★ (15K отзывов)
+Ссылка: wb.ru/catalog/12345
+Данные: 13.12.2025 09:00
+
+ДоброДерево (WB) — 800₽, рейтинг 4.5★ (8K отзывов)
+Ссылка: wb.ru/catalog/67890
+Данные: 13.12.2025 09:00
+
+text
+
+---
+
+### US-4: Error Recovery & Partial Results
+
+**As a** user with limited patience  
+**I want** agent to show partial results if API fails  
+**Instead of** "Ошибка, попробуй позже" black screen
+
+**Priority:** P0 (UX critical, API instability guaranteed)
+
+**Acceptance Criteria:**
+1. ✅ If WB timeout (>30s) → show cached data + disclaimer
+2. ✅ If Yandex blocked → skip Wordstat section, continue with WB only
+3. ✅ If LLM fails → show raw data (competitor list, prices) without analysis text
+4. ✅ User can retry failed sections individually (не весь анализ заново)
+5. ✅ Error messages user-friendly ("WB сейчас перегружен, попробуем кеш")
+
+---
+
+### US-5: PDF Export & Shareability
+
+**As a** founder pitching to partner/investor  
+**I want** to export analysis as PDF and forward via Telegram  
+**So that** I can share professional-looking report without screenshots
+
+**Priority:** P1 (Viral growth mechanism)
+
+**Acceptance Criteria:**
+1. ✅ PDF button generates valid PDF (<5 seconds)
+2. ✅ PDF includes all 7 sections + charts (if available)
+3. ✅ PDF mobile-readable (font size 12pt+, margins)
+4. ✅ PDF has branding (@ideaplanneragent_bot watermark)
+5. ✅ Forward button shares bot link + summary text
+
+**PDF Structure:**
+Page 1: Cover (idea name, date, logo)
+Page 2-3: Sections 1-3 (Idea Card, Why Now, Market Gap)
+Page 4-5: Sections 4-5 (Missing Data, Proof)
+Page 6-7: Sections 6-7 (Action Plan, Roadmap)
+Page 8: Footer (generated by @ideaplanneragent_bot, t.me/ideaplanneragent_bot)
+Страница 1: Обложка (название идеи, дата, логотип)
+
+text
+
+---
+
+🎯 СЛЕДУЮЩИЕ ШАГИ
+1. Скопируйте дополнения в PROJECT-CONTEXT.md
+Вставьте 3 новых раздела:
+
+INTERFACE SPECIFICATION (после "TECH STACK")
+
+ERROR HANDLING STRATEGY (после "INTERFACE SPECIFICATION")
+
+USER STORIES (DETAILED) (замените старый раздел "Success Criteria → Functional Requirements")
+
+2. Обновите Table of Contents
+Добавьте в оглавление:
+
+markdown
+4.5. [Interface Specification](#️-interface-specification)
+4.6. [Error Handling Strategy](#️-error-handling-strategy)
+13.1. [User Stories (Detailed)](#-user-stories-detailed)
+3. Закоммитьте изменения
+bash
+git add PROJECT-CONTEXT.md
+git commit -m "Add: Telegram Bot interface spec, error handling, detailed User Stories"
+git push origin main
 ## 🎯 AGENT CAPABILITIES
 
 ### Output Structure (7 Sections)
