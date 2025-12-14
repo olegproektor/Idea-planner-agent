@@ -1,8 +1,8 @@
 # Feature Specification: 001-core — Telegram Bot «idea_planner_agent» (RU market)
 
-**Feature Branch**: `001-core`  \
-**Created**: 14.12.2025  \
-**Status**: Draft  \
+**Feature Branch**: `001-core`  
+**Created**: 14.12.2025  
+**Status**: Draft  
 **Input**: Telegram messages sent to `@ideaplanneragent_bot`
 
 **Primary references (gates):**
@@ -37,8 +37,8 @@
 
 ### User Story 1 — Basic Telegram Bot Evaluation (Priority: P1)
 
-**As a** Russian solopreneur  \
-**I want** to send my idea to `@ideaplanneragent_bot` in Telegram  \
+**As a** Russian solopreneur  
+**I want** to send my idea to `@ideaplanneragent_bot` in Telegram  
 **So that** I receive 7-section analysis in <2 min with WB/Ozon data
 
 **Why this priority:**
@@ -56,9 +56,15 @@ E2E тест/ручной прогон в Telegram:
 - [ ] Пользователь отправляет текст идеи → анализ запускается
 - [ ] Бот показывает прогресс сообщением `⏳ Анализирую...` (допускается edit message по мере шагов)
 - [ ] Анализ завершён **< 2 минут (p90)**
-- [ ] Ответ содержит **7 секций**, форматированных для mobile:
-  - короткие абзацы (макс 3 предложения)
-  - эмодзи/маркеры для структуры (допустимо)
+- [ ] Ответ содержит **7 секций** в строгом порядке:
+  1. **КАРТОЧКА ИДЕИ**: Problem, Solution, Target Audience, Market Size, Competitors, Monetization, Risks
+  2. **ПОЧЕМУ СЕЙЧАС**: Timing factors, Policy/regulatory changes, Consumer behavior trends, Window of opportunity
+  3. **РЫНОЧНЫЙ РАЗРЫВ**: What's missing in market, Why existing solutions fail, Your unique angle
+  4. **НЕДОСТАЮЩИЕ ДАННЫЕ**: 10 critical questions for founder to validate
+  5. **ДОКАЗАТЕЛЬСТВА И СИГНАЛЫ**: Demand validation (WB/Ozon/Yandex data), Competitor signals, Price analysis
+  6. **ПЛАН ДЕЙСТВИЙ**: 30-day week-by-week action breakdown
+  7. **ПЛАН РЕАЛИЗАЦИИ**: 3-12 month roadmap with key stages/milestones
+- [ ] Each section formatted for mobile (max 3 sentences per paragraph, emoji for structure)
 - [ ] Цитаты содержат кликабельные ссылки WB/Ozon/Yandex (подходящие для Telegram)
 - [ ] Выполнены все критерии **AC-1..AC-4** (см. раздел "US-3" и Appendix)
 
@@ -66,8 +72,8 @@ E2E тест/ручной прогон в Telegram:
 
 ### User Story 2 — Mode Detection in Telegram (Priority: P1)
 
-**As a** power user  \
-**I want** to type `РЕЖИМ: БИЗНЕС-ПЛАН производство посуды`  \
+**As a** power user  
+**I want** to type `РЕЖИМ: БИЗНЕС-ПЛАН производство посуды`  
 **So that** I get investor-focused analysis
 
 **Why this priority:**
@@ -93,6 +99,16 @@ E2E тест/ручной прогон в Telegram:
   - ПОЧЕМУ_СЕЙЧАС
   - РЫНОЧНЫЙ_РАЗРЫВ
   - ДОКАЗАТЕЛЬСТВА
+
+**Режимы ОТЧЁТ 1-3 (clarification):**
+- **ОТЧЁТ 1**: Focus на Section 5 (Доказательства и сигналы) — глубокий анализ WB/Ozon данных с расширенной статистикой
+- **ОТЧЁТ 2**: Focus на Section 6 (План действий) — детальный 30-day breakdown с конкретными задачами и метриками
+- **ОТЧЁТ 3**: Focus на Section 7 (План реализации) — расширенный roadmap 3-12 месяцев с milestones и resource planning
+
+*Rationale:* Разные фазы проекта требуют разной детализации. Founder может запросить ОТЧЁТ 1 для validation данных, затем ОТЧЁТ 2 для execution planning, затем ОТЧЁТ 3 для долгосрочного планирования.
+
+**Total modes: 11** (ОЦЕНКА + 3 core business modes + САЙТ + 3 ОТЧЁТ modes + 3 section-specific deep-dive modes)
+
 - [ ] Default mode = `ОЦЕНКА`
 - [ ] Invalid mode → бот отвечает подсказкой + список валидных режимов (не падает)
 
@@ -124,8 +140,8 @@ E2E тест/ручной прогон в Telegram:
 
 ### User Story 4 — Error Recovery & Partial Results (Priority: P1)
 
-**As a** user with limited patience  \
-**I want** partial results if WB/Ozon/Yandex fails  \
+**As a** user with limited patience  
+**I want** partial results if WB/Ozon/Yandex fails  
 **Instead of** a generic crash/"Ошибка" screen
 
 **Why this priority:**
@@ -147,8 +163,8 @@ E2E тест/ручной прогон в Telegram:
 
 ### User Story 5 — Telegram Shareability (Priority: P2)
 
-**As a** founder pitching to a partner  \
-**I want** to forward bot analysis  \
+**As a** founder pitching to a partner  
+**I want** to forward bot analysis  
 **So that** we discuss based on data
 
 **Why this priority:**
@@ -170,12 +186,23 @@ E2E тест/ручной прогон в Telegram:
 
 ## Edge Cases
 
-- Пользователь отправляет пустое сообщение / только пробелы.
-- Пользователь присылает очень длинный текст (нужно сократить/попросить уточнить).
-- Telegram ограничивает длину сообщения: отчёт должен быть разбит на несколько сообщений/тред.
-- Источник вернул частичные данные (без цен/без рейтингов).
-- Rate limit/anti-bot на WB/Ozon/Yandex → никаких обходов, только деградация/кэш.
-- Пользователь прислал медиа/файл вместо текста.
+### Critical (must handle gracefully in MVP)
+- [ ] **Empty/whitespace message**: Bot replies "Пожалуйста, опишите вашу идею в 1-2 предложениях"
+- [ ] **Telegram message limit (4096 chars)**: Split report into 2-3 sequential messages with "1/3", "2/3", "3/3" indicators
+- [ ] **WB/Ozon rate limit**: Use cache (даже если >6h) + show `⚠️ Данные от {date}` + retry button
+- [ ] **All sources unavailable**: Show error + cached data от previous similar query (если есть) + manual retry
+- [ ] **LLM timeout (>120s)**: Return partial analysis (raw data + что успели проанализировать)
+
+### Important (should handle, can be basic)
+- [ ] **Very long input (>500 words)**: Ask user to summarize in 1-2 sentences, OR take first 200 words
+- [ ] **Media/files sent instead of text**: Reply "Я анализирую текстовые идеи. Пожалуйста, опишите идею текстом."
+- [ ] **Partial source data** (e.g., WB prices но нет ratings): Show available data + note "⚠️ Рейтинги недоступны"
+- [ ] **Invalid mode typo** (e.g., "РЕЖИМ: БИЗНЕС"): Suggest closest match "Возможно вы имели в виду БИЗНЕС-ПЛАН?"
+
+### Nice-to-have (can defer to v1.1)
+- [ ] **Multiple rapid requests from same user**: Queue + show "⏳ Обрабатываю предыдущий запрос..."
+- [ ] **Concurrent requests from different users**: Handle via async processing (not blocking)
+- [ ] **User edits message after sending**: Ignore edits (only process original message)
 
 ---
 
@@ -192,12 +219,22 @@ E2E тест/ручной прогон в Telegram:
 - **FR-007**: При ошибках источников система MUST возвращать частичные результаты + кнопку retry.
 - **FR-008**: Система MUST соблюдать ToS/этику: никаких обходов анти-бота/логина/платных гейтов.
 - **FR-009**: Платные/приватные данные MUST использоваться только при user-provided доступе (см. Конституцию).
+- **FR-010**: Система MUST кэшировать WB/Ozon/Yandex данные на 6 часов (для performance и ToS compliance)
+- **FR-011**: Кэш MUST включать timestamp, source URL, и полные данные для citations
+- **FR-012**: Если кэш >6 часов → система MUST попытаться обновление, при ошибке fallback на кэш с индикатором `⚠️ Данные от {date}`
+- **FR-013**: Кэш MUST быть per-query (разные идеи = разные кэш-ключи), чтобы избежать cross-contamination
 
 ### Non-Functional Requirements
 
 - **NFR-001**: p90 latency полного анализа < 2 минут (Telegram UX).
 - **NFR-002**: Ответы оптимизированы под mobile: короткие абзацы, ограничение длины сообщений.
-- **NFR-003**: Высокая наблюдаемость: логирование шагов (источники/тайминги) без утечки секретов.
+- **NFR-003**: Observability & Monitoring
+  - Structured logging (JSON format) для всех операций
+  - Log каждый API call: `{source: "wb", endpoint: "...", latency_ms: 450, result: "success"}`
+  - Log каждую ошибку с context: `{user_id: "...", error_type: "timeout", source: "ozon", idea_hash: "..."}`
+  - Metrics collection: `analysis_time_p90`, `cache_hit_rate`, `error_rate_by_source`
+  - **No PII in logs**: user ideas hashed или omitted, только user_id для tracing
+  - Retention: logs 30 days, metrics 90 days (GDPR-friendly для РФ users)
 
 ### Key Entities
 
@@ -226,6 +263,9 @@ E2E тест/ручной прогон в Telegram:
 
 - Python library: `python-telegram-bot`
 - Production operation: **webhook mode** (polling допустим только для локальной разработки)
+- Webhook URL: `https://{app_name}.railway.app/telegram/webhook`
+- SSL certificate: Let's Encrypt (auto via Railway/Cloud Run)
+- Webhook secret: required for request validation
 - Deployment target (initial): Railway.app или Google Cloud Run
 - Formatting rules: max 3 sentences per paragraph; emojis allowed for structure; long report may be split into multiple Telegram messages
 
@@ -253,4 +293,3 @@ E2E тест/ручной прогон в Telegram:
 - [ ] Есть слой валидации: числа в ответе соответствуют извлечённым данным
 - [ ] Если обнаружена галлюцинация → ошибка/стоп, без «финального» ответа
 - [ ] Если источник недоступен → graceful degrade + честное сообщение пользователю
-
