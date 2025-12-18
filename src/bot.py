@@ -14,7 +14,8 @@ import os
 # Import local modules
 from src.config import settings
 from src.database import init_db, get_db, SessionLocal
-from src.handlers import start_handler, help_handler, idea_handler, error_handler
+from src.handlers import start_handler, help_handler, idea_handler, market_search_handler, error_handler
+from src.ru_search.aggregator import MarketDataAggregator
 
 # Configure structured logging
 LOGGING_CONFIG = {
@@ -47,6 +48,11 @@ LOGGING_CONFIG = {
             "level": "INFO",
             "propagate": False,
             "handlers": ["console"]
+        },
+        "ru_search": {
+            "level": "INFO",
+            "propagate": False,
+            "handlers": ["console"]
         }
     }
 }
@@ -69,15 +75,35 @@ class TelegramBot:
         self.app = None
         self.webhook_server = None
         self.fastapi_app = FastAPI()
-        
+        self.market_aggregator = None
+         
         # Initialize database
         init_db()
         logger.info("Database initialized")
-        
+         
+        # Initialize MarketDataAggregator with config settings
+        self._initialize_market_aggregator()
+         
         # Setup FastAPI routes
         self._setup_fastapi_routes()
-        
+         
         logger.info(f"Telegram Bot initialized with token: {self.bot_token[:5]}...")
+        
+        # Initialize ru_search logger
+        self.ru_search_logger = logging.getLogger("ru_search")
+    
+    def _initialize_market_aggregator(self):
+        """
+        Initialize the MarketDataAggregator with configuration settings.
+        """
+        try:
+            # Use CACHE_TTL from config settings
+            cache_ttl = self.settings.CACHE_TTL
+            self.market_aggregator = MarketDataAggregator(cache_ttl=cache_ttl)
+            logger.info(f"MarketDataAggregator initialized with cache TTL: {cache_ttl} seconds")
+        except Exception as e:
+            logger.error(f"Failed to initialize MarketDataAggregator: {e}")
+            self.market_aggregator = None
     
     def _setup_fastapi_routes(self):
         """
@@ -116,7 +142,7 @@ class TelegramBot:
     def build_application(self) -> Application:
         """
         Build and configure the Telegram Application instance.
-        
+         
         Returns:
             Application: Configured Telegram Application instance
         """
@@ -128,15 +154,21 @@ class TelegramBot:
             .get_updates_http_version("1.1")
             .build()
         )
-        
+         
         # Add handlers from handlers module
         app.add_handler(CommandHandler("start", start_handler))
         app.add_handler(CommandHandler("help", help_handler))
+        app.add_handler(CommandHandler("market", market_search_handler))
+        app.add_handler(CommandHandler("search", market_search_handler))
+        app.add_handler(CommandHandler("analyze", market_search_handler))
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, idea_handler))
-        
+         
         # Add error handler
         app.add_error_handler(error_handler)
         
+        # Add market_aggregator to bot_data for access in handlers
+        app.bot_data['market_aggregator'] = self.market_aggregator
+         
         return app
     
     
@@ -230,17 +262,25 @@ class TelegramBot:
         Gracefully shutdown the bot and clean up resources.
         """
         logger.info("Shutting down bot...")
-        
+         
+        # Clean up MarketDataAggregator
+        if self.market_aggregator:
+            try:
+                self.market_aggregator.close()
+                logger.info("MarketDataAggregator closed")
+            except Exception as e:
+                logger.error(f"Error closing MarketDataAggregator: {e}")
+         
         # Remove webhook
         self.remove_webhook()
-        
+         
         # Close database sessions
         try:
             SessionLocal.remove()
             logger.info("Database sessions closed")
         except Exception as e:
             logger.error(f"Error closing database sessions: {e}")
-        
+         
         # Stop application
         if self.app:
             if hasattr(self.app, 'shutdown'):
@@ -248,7 +288,7 @@ class TelegramBot:
             if hasattr(self.app, 'stop'):
                 self.app.stop()
             logger.info("Telegram application stopped")
-        
+         
         logger.info("Bot shutdown complete")
     
     def __enter__(self):

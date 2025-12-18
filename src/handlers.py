@@ -8,6 +8,7 @@ import time
 # Import local modules
 from src.database import SessionLocal, UserCRUD, IdeaCRUD, AnalysisCRUD, AnalysisMode
 from src.config import settings
+from src.ru_search.aggregator import MarketDataAggregator
 
 # Configure logger
 logger = logging.getLogger("bot")
@@ -67,6 +68,10 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "• ПОЧЕМУ_СЕЙЧАС - Анализ актуальности\n"
             "• РЫНОЧНЫЙ_РАЗРЫВ - Анализ рыночных возможностей\n"
             "• ДОКАЗАТЕЛЬСТВА - Сбор доказательств концепции\n\n"
+            "🔍 Поиск по российскому рынку:\n"
+            "• Используйте /market <запрос> для поиска товаров\n"
+            "• Пример: /market смартфоны\n"
+            "• Поддерживаются Wildberries, Ozon и Yandex Market\n\n"
             "Просто отправьте вашу идею текстом, и я начну анализ!"
         )
         
@@ -89,6 +94,11 @@ async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "2. Просто отправьте вашу бизнес-идею текстом\n"
             "3. Бот сохранит вашу идею и начнет анализ\n"
             "4. Вы получите уведомление о прогрессе\n\n"
+            "🔍 Функции поиска по рынку:\n"
+            "• /market <запрос> - Поиск товаров на российских площадках\n"
+            "• /search <запрос> - Альтернативная команда поиска\n"
+            "• /analyze <запрос> - Анализ рынка по запросу\n"
+            "Пример: /market смартфоны\n\n"
             "💡 Советы:\n"
             "• Описывайте идеи как можно подробнее\n"
             "• Указывайте целевую аудиторию и рынок\n"
@@ -197,6 +207,115 @@ async def idea_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error in idea_handler for user {update.effective_user.id}: {e}")
         await update.message.reply_text("❌ Произошла ошибка при обработке вашей идеи. Пожалуйста, попробуйте позже.")
 
+async def market_search_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """
+    Handle market search commands for Russian market analysis.
+    Supports commands like /market, /search, /analyze.
+    """
+    try:
+        # Get user info
+        user = update.effective_user
+        telegram_id = str(user.id)
+        
+        # Get ru_search logger
+        ru_search_logger = logging.getLogger("ru_search")
+        
+        # Get the query from the command arguments
+        query_text = " ".join(context.args) if context.args else None
+        
+        if not query_text or query_text.strip() == "":
+            help_message = (
+                "🔍 Поиск по рынку России 🔍\n\n"
+                "Использование: /market <запрос>\n"
+                "Пример: /market смартфоны\n"
+                "Это выполнит поиск по Wildberries, Ozon и Yandex Market"
+            )
+            await update.message.reply_text(help_message, parse_mode=ParseMode.MARKDOWN)
+            ru_search_logger.info(f"User {telegram_id} requested market search help")
+            return
+        
+        # Show progress indicator
+        progress_message = await update.message.reply_text("⏳ Выполняю поиск по рынку... Это может занять несколько секунд.")
+        
+        # Get market aggregator from bot_data
+        market_aggregator = context.bot_data.get('market_aggregator')
+        
+        # Check if market aggregator is available
+        if not market_aggregator:
+            await progress_message.edit_text("❌ Ошибка: Сервис поиска по рынку временно недоступен.")
+            ru_search_logger.error(f"Market aggregator not available for user {telegram_id}")
+            return
+         
+        # Perform market search
+        try:
+            ru_search_logger.info(f"Starting market search for user {telegram_id}: {query_text}")
+            
+            # Use the market aggregator to search
+            search_results = await market_aggregator.search(
+                query=query_text,
+                sources=["wildberries", "ozon", "yandex"],
+                use_cache=True,
+                timeout=90
+            )
+            
+            ru_search_logger.info(f"Market search completed for user {telegram_id}: {query_text}")
+            
+            # Format the results
+            summary = search_results.get('summary', {})
+            source_results = search_results.get('source_results', {})
+            errors = search_results.get('errors', [])
+            
+            # Log summary statistics
+            ru_search_logger.info(f"Search summary for '{query_text}': {summary.get('total_products', 0)} products, avg price: {summary.get('average_price', 0):.2f} ₽")
+            
+            # Prepare response message
+            response_lines = []
+            response_lines.append(f"📊 Результаты поиска по запросу: *{query_text}*")
+            response_lines.append(f"🕒 Время выполнения: {summary.get('execution_time', 0):.2f} секунд")
+            response_lines.append("")
+            
+            # Add summary statistics
+            response_lines.append("📈 Статистика:")
+            response_lines.append(f"• Всего товаров: {summary.get('total_products', 0)}")
+            response_lines.append(f"• Уникальных товаров: {summary.get('unique_products', 0)}")
+            response_lines.append(f"• Средняя цена: {summary.get('average_price', 0):.2f} ₽")
+            response_lines.append(f"• Диапазон цен: {summary.get('price_range', 'N/A')}")
+            response_lines.append("")
+            
+            # Add source-specific results
+            response_lines.append("🛒 Результаты по источникам:")
+            for source_name, source_data in source_results.items():
+                products = source_data.get('products', [])
+                cache_hit = source_data.get('cache_hit', False)
+                count = source_data.get('count', 0)
+                
+                cache_status = "🔄 (из кеша)" if cache_hit else "🔍 (новый поиск)"
+                response_lines.append(f"• {source_name.capitalize()}: {count} товаров {cache_status}")
+                ru_search_logger.info(f"Source {source_name}: {count} products, cache_hit: {cache_hit}")
+            
+            # Add error information if any
+            if errors:
+                response_lines.append("")
+                response_lines.append("⚠️ Ошибки:")
+                for error in errors:
+                    response_lines.append(f"• {error.get('source', 'Unknown')}: {error.get('error', 'Unknown error')}")
+                    ru_search_logger.warning(f"Search error for {error.get('source', 'Unknown')}: {error.get('error', 'Unknown error')}")
+            
+            # Send the response
+            response_message = "\n".join(response_lines)
+            await progress_message.edit_text(response_message, parse_mode=ParseMode.MARKDOWN)
+            
+            ru_search_logger.info(f"Market search results sent to user {telegram_id}")
+            
+        except Exception as search_error:
+            ru_search_logger.error(f"Market search failed for user {telegram_id}: {search_error}")
+            await progress_message.edit_text(f"❌ Ошибка при поиске по рынку: {str(search_error)}")
+            
+    except Exception as e:
+        ru_search_logger.error(f"Error in market_search_handler for user {update.effective_user.id}: {e}")
+        await update.message.reply_text("❌ Произошла ошибка при поиске по рынку. Пожалуйста, попробуйте позже.")
+
+
 async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_TYPE, error):
     """
     Global error handler with graceful error messages and logging.
@@ -205,13 +324,13 @@ async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_
         # Log the error with structured format
         logger.error(f"Error occurred: {error}")
         logger.error(f"Update context: {update}")
-        
+         
         # Extract user info if available
         user_id = "unknown"
         if update and update.effective_user:
             user_id = update.effective_user.id
             logger.error(f"Error for user {user_id}")
-        
+         
         # Send graceful error message to user if it's a message update
         if update and update.effective_message:
             try:
@@ -221,13 +340,13 @@ async def error_handler(update: Optional[Update], context: ContextTypes.DEFAULT_
                 )
             except Exception as reply_error:
                 logger.error(f"Failed to send error reply to user {user_id}: {reply_error}")
-        
+         
         # Additional error details logging
         if hasattr(error, 'message'):
             logger.error(f"Error message: {error.message}")
         if hasattr(error, 'code'):
             logger.error(f"Error code: {error.code}")
-            
+             
     except Exception as handler_error:
         # Fallback error handling to prevent infinite loops
         logger.error(f"Critical error in error_handler: {handler_error}")
